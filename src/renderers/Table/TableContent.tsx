@@ -6,8 +6,11 @@ import {TableRow} from './TableRow';
 import {filter} from '../../utils/tpl';
 import {observer} from 'mobx-react';
 import {trace, reaction} from 'mobx';
+import {flattenTree} from '../../utils/helper';
+import {TableBody} from './TableBody';
+import {LocaleProps} from '../../locale';
 
-export interface TableContentProps {
+export interface TableContentProps extends LocaleProps {
   className?: string;
   tableClassName?: string;
   classnames: ClassNamesFn;
@@ -45,6 +48,9 @@ export interface TableContentProps {
   onAction?: (e: React.UIEvent<any>, action: Action, ctx: object) => void;
   rowClassNameExpr?: string;
   rowClassName?: string;
+  data?: any;
+  prefixRow?: Array<any>;
+  affixRow?: Array<any>;
 }
 
 export class TableContent extends React.Component<TableContentProps> {
@@ -56,7 +62,9 @@ export class TableContent extends React.Component<TableContentProps> {
 
     this.reaction = reaction(
       () =>
-        `${rows.map(item => item.id).join(',')}${rows
+        `${flattenTree(rows)
+          .map(item => `${item.id}`)
+          .join(',')}${rows
           .filter(item => item.checked)
           .map(item => item.id)
           .join(',')}`,
@@ -70,105 +78,20 @@ export class TableContent extends React.Component<TableContentProps> {
   shouldComponentUpdate(nextProps: TableContentProps) {
     const props = this.props;
 
-    if (props.columns !== nextProps.columns) {
+    if (
+      props.columns !== nextProps.columns ||
+      props.buildItemProps !== nextProps.buildItemProps ||
+      props.prefixRow ||
+      props.affixRow
+    ) {
       return true;
     }
 
     return false;
   }
 
-  componentwillUnmount() {
+  componentWillUnmount() {
     this.reaction?.();
-  }
-
-  renderRows(
-    rows: Array<any>,
-    columns = this.props.columns,
-    rowProps: any = {}
-  ): any {
-    const {
-      rowClassName,
-      rowClassNameExpr,
-      onAction,
-      buildItemProps,
-      checkOnItemClick,
-      classnames: cx,
-      render,
-      renderCell,
-      onCheck,
-      onQuickChange,
-      footable,
-      footableColumns
-    } = this.props;
-
-    return rows.map((item: IRow, rowIndex: number) => {
-      const itemProps = buildItemProps ? buildItemProps(item, rowIndex) : null;
-
-      const doms = [
-        <TableRow
-          {...itemProps}
-          classnames={cx}
-          checkOnItemClick={checkOnItemClick}
-          key={item.index}
-          itemIndex={rowIndex}
-          item={item}
-          itemClassName={cx(
-            rowClassNameExpr
-              ? filter(rowClassNameExpr, item.data)
-              : rowClassName,
-            {
-              'is-last': item.depth > 1 && rowIndex === rows.length - 1
-            }
-          )}
-          columns={columns}
-          renderCell={renderCell}
-          render={render}
-          onAction={onAction}
-          onCheck={onCheck}
-          // todo 先注释 quickEditEnabled={item.depth === 1}
-          onQuickChange={onQuickChange}
-          {...rowProps}
-        />
-      ];
-
-      if (footable && footableColumns.length) {
-        if (item.depth === 1) {
-          doms.push(
-            <TableRow
-              {...itemProps}
-              classnames={cx}
-              checkOnItemClick={checkOnItemClick}
-              key={`foot-${item.index}`}
-              itemIndex={rowIndex}
-              item={item}
-              itemClassName={cx(
-                rowClassNameExpr
-                  ? filter(rowClassNameExpr, item.data)
-                  : rowClassName
-              )}
-              columns={footableColumns}
-              renderCell={renderCell}
-              render={render}
-              onAction={onAction}
-              onCheck={onCheck}
-              footableMode
-              footableColSpan={columns.length}
-              onQuickChange={onQuickChange}
-              {...rowProps}
-            />
-          );
-        }
-      } else if (Array.isArray(item.data.children)) {
-        // 嵌套表格
-        doms.push(
-          ...this.renderRows(item.children, columns, {
-            ...rowProps,
-            parent: item
-          })
-        );
-      }
-      return doms;
-    });
   }
 
   render() {
@@ -183,7 +106,22 @@ export class TableContent extends React.Component<TableContentProps> {
       onScroll,
       tableRef,
       rows,
-      renderHeadCell
+      renderHeadCell,
+      renderCell,
+      onCheck,
+      rowClassName,
+      onQuickChange,
+      footable,
+      footableColumns,
+      checkOnItemClick,
+      buildItemProps,
+      onAction,
+      rowClassNameExpr,
+      data,
+      prefixRow,
+      locale,
+      translate,
+      affixRow
     } = this.props;
 
     const tableClassName = cx('Table-table', this.props.tableClassName);
@@ -219,17 +157,28 @@ export class TableContent extends React.Component<TableContentProps> {
               )}
             </tr>
           </thead>
-          <tbody>
-            {rows.length ? (
-              this.renderRows(rows, columns)
-            ) : (
-              <tr className={cx('Table-placeholder')}>
-                <td colSpan={columns.length}>
-                  {render('placeholder', placeholder || '暂无数据')}
-                </td>
-              </tr>
-            )}
-          </tbody>
+          <TableBody
+            classnames={cx}
+            placeholder={placeholder}
+            render={render}
+            renderCell={renderCell}
+            onCheck={onCheck}
+            onQuickChange={onQuickChange}
+            footable={footable}
+            footableColumns={footableColumns}
+            checkOnItemClick={checkOnItemClick}
+            buildItemProps={buildItemProps}
+            onAction={onAction}
+            rowClassNameExpr={rowClassNameExpr}
+            rowClassName={rowClassName}
+            rows={rows}
+            columns={columns}
+            locale={locale}
+            translate={translate}
+            prefixRow={prefixRow}
+            affixRow={affixRow}
+            data={data}
+          ></TableBody>
         </table>
       </div>
     );

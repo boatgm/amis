@@ -45,10 +45,15 @@ export interface CityControlSchema extends FormBaseControl {
    * 允许选择街道？
    */
   allowStreet?: boolean;
+
+  /**
+   * 是否显示搜索框
+   */
+  searchable?: boolean;
 }
 
 export interface CityPickerProps
-  extends Omit<CityControlSchema, 'type'>,
+  extends Omit<CityControlSchema, 'type' | 'className'>,
     LocaleProps,
     ThemeProps {
   value: any;
@@ -129,19 +134,33 @@ export class CityPicker extends React.Component<
       return;
     }
 
-    (require as any)(['./CityDB'], (db: any) =>
+    import('./CityDB').then(db => {
       this.setState(
         {
           db: {
             ...db.default,
-            province: db.province,
+            province: db.province as any,
             city: db.city,
             district: db.district
           }
         },
         callback
-      )
-    );
+      );
+    });
+
+    // require.ensure(['./CityDB'], (db: any) =>
+    //   this.setState(
+    //     {
+    //       db: {
+    //         ...db.default,
+    //         province: db.province,
+    //         city: db.city,
+    //         district: db.district
+    //       }
+    //     },
+    //     callback
+    //   )
+    // );
   }
 
   @autobind
@@ -250,6 +269,9 @@ export class CityPicker extends React.Component<
       if (db[cityCode]) {
         state.cityCode = cityCode;
         state.city = db[cityCode];
+      } else if (~db.city[provinceCode]?.indexOf(code)) {
+        state.cityCode = code;
+        state.city = db[code];
       }
 
       if (code % 100) {
@@ -308,6 +330,7 @@ export class CityPicker extends React.Component<
       allowCity,
       allowDistrict,
       allowStreet,
+      searchable,
       translate: __
     } = this.props;
 
@@ -316,6 +339,7 @@ export class CityPicker extends React.Component<
     return db ? (
       <div className={cx('CityPicker', className)}>
         <Select
+          searchable={searchable}
           disabled={disabled}
           options={db.province.map(item => ({
             label: db[item],
@@ -329,6 +353,7 @@ export class CityPicker extends React.Component<
         allowDistrict &&
         Array.isArray(db.district[provinceCode]) ? (
           <Select
+            searchable={searchable}
             disabled={disabled}
             options={(db.district[provinceCode] as Array<number>).map(item => ({
               label: db[item],
@@ -341,6 +366,7 @@ export class CityPicker extends React.Component<
           db.city[provinceCode] &&
           db.city[provinceCode].length ? (
           <Select
+            searchable={searchable}
             disabled={disabled}
             options={db.city[provinceCode].map(item => ({
               label: db[item],
@@ -353,9 +379,9 @@ export class CityPicker extends React.Component<
 
         {cityCode &&
         allowDistrict &&
-        db.district[provinceCode] &&
-        db.district[provinceCode][cityCode] ? (
+        (db.district[provinceCode]?.[cityCode] as any)?.length ? (
           <Select
+            searchable={searchable}
             disabled={disabled}
             options={(db.district[provinceCode][cityCode] as Array<number>).map(
               item => ({
@@ -374,7 +400,8 @@ export class CityPicker extends React.Component<
             value={street}
             onChange={this.handleStreetChange}
             onBlur={this.handleStreetEnd}
-            placeholder={__('请输入街道信息')}
+            placeholder={__('City.street')}
+            disabled={disabled}
           />
         ) : null}
       </div>
@@ -403,10 +430,13 @@ export class LocationControl extends React.Component<LocationControlProps> {
       allowDistrict,
       extractValue,
       joinValues,
-      allowStreet
+      allowStreet,
+      disabled,
+      searchable
     } = this.props;
     return (
       <ThemedCity
+        searchable={searchable}
         value={value}
         onChange={onChange}
         allowCity={allowCity}
@@ -414,6 +444,7 @@ export class LocationControl extends React.Component<LocationControlProps> {
         extractValue={extractValue}
         joinValues={joinValues}
         allowStreet={allowStreet}
+        disabled={disabled}
       />
     );
   }

@@ -116,6 +116,7 @@ export interface AjaxActionSchema extends ButtonSchema {
 
   reload?: SchemaReload;
   redirect?: string;
+  ignoreConfirm?: boolean;
 }
 
 export interface UrlActionSchema extends ButtonSchema {
@@ -219,7 +220,9 @@ export interface OtherActionSchema extends ButtonSchema {
     | 'close'
     | 'submit'
     | 'confirm'
-    | 'add';
+    | 'add'
+    | 'reset'
+    | 'reset-and-submit';
   [propName: string]: any;
 }
 
@@ -292,18 +295,19 @@ import {
 } from '../Schema';
 import {DialogSchema, DialogSchemaBase} from './Dialog';
 import {DrawerSchema, DrawerSchemaBase} from './Drawer';
+import {generateIcon} from '../utils/icon';
 
 export interface ActionProps
-  extends ButtonSchema,
+  extends Omit<ButtonSchema, 'className' | 'iconClassName'>,
     ThemeProps,
-    AjaxActionSchema,
-    UrlActionSchema,
-    LinkActionSchema,
-    DialogActionSchema,
-    DrawerActionSchema,
-    CopyActionSchema,
-    ReloadActionSchema,
-    OtherActionSchema {
+    Omit<AjaxActionSchema, 'type' | 'className' | 'iconClassName'>,
+    Omit<UrlActionSchema, 'type' | 'className' | 'iconClassName'>,
+    Omit<LinkActionSchema, 'type' | 'className' | 'iconClassName'>,
+    Omit<DialogActionSchema, 'type' | 'className' | 'iconClassName'>,
+    Omit<DrawerActionSchema, 'type' | 'className' | 'iconClassName'>,
+    Omit<CopyActionSchema, 'type' | 'className' | 'iconClassName'>,
+    Omit<ReloadActionSchema, 'type' | 'className' | 'iconClassName'>,
+    Omit<OtherActionSchema, 'type' | 'className' | 'iconClassName'> {
   actionType: any;
   onAction?: (
     e: React.MouseEvent<any> | void | null,
@@ -379,6 +383,8 @@ export class Action extends React.Component<ActionProps> {
       isActive = isCurrentUrl(link);
     }
 
+    const iconElement = generateIcon(cx, icon, 'Button-icon', iconClassName);
+
     return isMenuItem ? (
       <a
         className={cx(className, {
@@ -388,7 +394,7 @@ export class Action extends React.Component<ActionProps> {
         onClick={this.handleAction}
       >
         {label}
-        {icon ? <i className={cx('Button-icon', icon)} /> : null}
+        {iconElement}
       </a>
     ) : (
       <Button
@@ -412,8 +418,8 @@ export class Action extends React.Component<ActionProps> {
         block={block}
         iconOnly={!!(icon && !label && level !== 'link')}
       >
-        {label ? <span>{filter(label, data)}</span> : null}
-        {icon ? <i className={cx('Button-icon', icon, iconClassName)} /> : null}
+        {label ? <span>{filter(String(label), data)}</span> : null}
+        {iconElement}
       </Button>
     );
   }
@@ -438,9 +444,9 @@ export class ActionRenderer extends React.Component<
 > {
   @autobind
   handleAction(e: React.MouseEvent<any> | void | null, action: any) {
-    const {env, onAction, data} = this.props;
+    const {env, onAction, data, ignoreConfirm} = this.props;
 
-    if (action.confirmText && env.confirm) {
+    if (!ignoreConfirm && action.confirmText && env.confirm) {
       env
         .confirm(filter(action.confirmText, data))
         .then((confirmed: boolean) => confirmed && onAction(e, action, data));

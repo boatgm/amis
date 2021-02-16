@@ -1,8 +1,18 @@
 import moment from 'moment';
 import {PlainObject} from '../types';
 import isPlainObject from 'lodash/isPlainObject';
-import {createObject, isObject, setVariable, qsstringify} from './helper';
+import groupBy from 'lodash/groupBy';
+import {
+  createObject,
+  isObject,
+  setVariable,
+  qsstringify,
+  keyToPath,
+  string2regExp
+} from './helper';
 import {Enginer} from './tpl';
+import uniqBy from 'lodash/uniqBy';
+import uniq from 'lodash/uniq';
 
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
 
@@ -62,6 +72,30 @@ export function formatDuration(value: number): string {
   }
 
   return parts.join('');
+}
+
+function makeSorter(
+  key: string,
+  method?: 'alpha' | 'numerical',
+  order?: 'desc' | 'asc'
+) {
+  return function (a: any, b: any) {
+    if (!a || !b) {
+      return 0;
+    }
+
+    const va = resolveVariable(key, a);
+    const vb = resolveVariable(key, b);
+    let result = 0;
+
+    if (method === 'numerical') {
+      result = (parseFloat(va) || 0) - (parseFloat(vb) || 0);
+    } else {
+      result = String(va).localeCompare(String(vb));
+    }
+
+    return result * (order === 'desc' ? -1 : 1);
+  };
 }
 
 const timeUnitMap: {
@@ -127,6 +161,22 @@ export const filterDate = (
   }
 };
 
+export function parseDuration(str: string): moment.Duration | undefined {
+  const matches = /^((?:\-|\+)?(?:\d*\.)?\d+)(minute|min|hour|day|week|month|year|weekday|second|millisecond)s?$/.exec(
+    str
+  );
+
+  if (matches) {
+    const duration = moment.duration(parseFloat(matches[1]), matches[2] as any);
+
+    if (moment.isDuration(duration)) {
+      return duration;
+    }
+  }
+
+  return;
+}
+
 export const filters: {
   [propName: string]: (input: any, ...args: any[]) => any;
 } = {
@@ -144,7 +194,35 @@ export const filters: {
     }
     return ret;
   },
+  toInt: input => (typeof input === 'string' ? parseInt(input, 10) : input),
+  toFloat: input => (typeof input === 'string' ? parseFloat(input) : input),
   raw: input => input,
+  now: () => new Date(),
+  toDate: (input: any, inputFormat = '') => {
+    const data = moment(input, inputFormat);
+    data.add();
+    return data.isValid() ? data.toDate() : undefined;
+  },
+  dateModify: (
+    input: any,
+    modifier: 'add' | 'subtract' | 'endOf' | 'startOf' = 'add',
+    amount = 0,
+    unit = 'days'
+  ) => {
+    if (!(input instanceof Date)) {
+      input = new Date();
+    }
+
+    if (modifier === 'endOf' || modifier === 'startOf') {
+      return moment(input)
+        [modifier === 'endOf' ? 'endOf' : 'startOf'](amount || 'day')
+        .toDate();
+    }
+
+    return moment(input)
+      [modifier === 'add' ? 'add' : 'subtract'](parseInt(amount, 10) || 0, unit)
+      .toDate();
+  },
   date: (input, format = 'LLL', inputFormat = 'X') =>
     moment(input, inputFormat).format(format),
   number: input => {
@@ -152,7 +230,7 @@ export const filters: {
     parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     return parts.join('.');
   },
-  trim: input => input.trim(),
+  trim: input => (typeof input === 'string' ? input.trim() : input),
   percent: (input, decimals = 0) => {
     input = parseFloat(input) || 0;
     decimals = parseInt(decimals, 10) || 0;
@@ -177,6 +255,10 @@ export const filters: {
     return (Math.round(input * multiplier) / multiplier).toFixed(decimals);
   },
   truncate: (input, length, end) => {
+    if (typeof input !== 'string') {
+      return input;
+    }
+
     end = end || '...';
 
     if (length == null) {
@@ -205,11 +287,81 @@ export const filters: {
   join: (input, glue) => (input && input.join ? input.join(glue) : input),
   split: (input, delimiter = ',') =>
     typeof input === 'string' ? input.split(delimiter) : input,
+  sortBy: (
+    input: any,
+    key: string,
+    method: 'alpha' | 'numerical' = 'alpha',
+    order?: 'asc' | 'desc'
+  ) =>
+    Array.isArray(input) ? input.sort(makeSorter(key, method, order)) : input,
+  unique: (input: any, key?: string) =>
+    Array.isArray(input) ? (key ? uniqBy(input, key) : uniq(input)) : input,
+  topAndOther: (
+    input: any,
+    len: number = 10,
+    labelField: string = 'name',
+    restLabel = '其他'
+  ) => {
+    if (Array.isArray(input) && len) {
+      const grouped = groupBy(input, (item: any) => {
+        const index = input.indexOf(item) + 1;
+        return index >= len ? len : index;
+      });
+
+      return Object.keys(grouped).map((key, index) => {
+        const group = grouped[key];
+        const obj = group.reduce((obj, item) => {
+          Object.keys(item).forEach(key => {
+            if (!obj.hasOwnProperty(key) || key === 'labelField') {
+              obj[key] = item[key];
+            } else if (
+              typeof item[key] === 'number' &&
+              typeof obj[key] === 'number'
+            ) {
+              obj[key] += item[key];
+            } else if (
+              typeof item[key] === 'string' &&
+              /^(?:\-|\.)\d/.test(item[key]) &&
+              typeof obj[key] === 'number'
+            ) {
+              obj[key] += parseFloat(item[key]) || 0;
+            } else if (
+              typeof item[key] === 'string' &&
+              typeof obj[key] === 'string'
+            ) {
+              obj[key] += `, ${item[key]}`;
+            } else {
+              obj[key] = item[key];
+            }
+          });
+
+          return obj;
+        }, {});
+
+        if (index === len - 1) {
+          obj[labelField] = restLabel || '其他';
+        }
+        return obj;
+      });
+    }
+    return input;
+  },
   first: input => input && input[0],
   nth: (input, nth = 0) => input && input[nth],
   last: input => input && (input.length ? input[input.length - 1] : null),
   minus: (input, step = 1) => (parseInt(input, 10) || 0) - parseInt(step, 10),
   plus: (input, step = 1) => (parseInt(input, 10) || 0) + parseInt(step, 10),
+  count: (input: any) =>
+    Array.isArray(input) || typeof input === 'string' ? input.length : 0,
+  sum: (input, field) =>
+    Array.isArray(input)
+      ? input.reduce(
+          (sum, item) =>
+            sum + (parseFloat(field ? pickValues(field, item) : item) || 0),
+          0
+        )
+      : input,
+  abs: (input: any) => (typeof input === 'number' ? Math.abs(input) : input),
   pick: (input, path = '&') =>
     Array.isArray(input) && !/^\d+$/.test(path)
       ? input.map((item, index) =>
@@ -226,6 +378,11 @@ export const filters: {
       : '';
   },
   asArray: input => (Array.isArray(input) ? input : input ? [input] : input),
+  concat(input, ...args: any[]) {
+    return Array.isArray(input)
+      ? input.concat(...args.map(arg => getStrOrVariable(arg, this)))
+      : input;
+  },
   filter: function (input, keys, expOrDirective, arg1) {
     if (!Array.isArray(input) || !keys || !expOrDirective) {
       return input;
@@ -244,12 +401,15 @@ export const filters: {
       arg1 = arg1 ? getStrOrVariable(arg1, this) : '';
       fn = value => arg1 == value;
     } else if (directive === 'isIn') {
-      let list: Array<any> = arg1 ? getStrOrVariable(arg1, this) : [];
-      list = Array.isArray(list) ? list : [list];
-      fn = value => !!~list.indexOf(value);
+      let list: any = arg1 ? getStrOrVariable(arg1, this) : [];
+
+      list = str2array(list);
+      list = Array.isArray(list) ? list : list ? [list] : [];
+      fn = value => (list.length ? !!~list.indexOf(value) : true);
     } else if (directive === 'notIn') {
       let list: Array<any> = arg1 ? getStrOrVariable(arg1, this) : [];
-      list = Array.isArray(list) ? list : [list];
+      list = str2array(list);
+      list = Array.isArray(list) ? list : list ? [list] : [];
       fn = value => !~list.indexOf(value);
     } else {
       if (directive !== 'match') {
@@ -263,7 +423,8 @@ export const filters: {
         return input;
       }
 
-      fn = value => new RegExp(arg1, 'i').test(String(value));
+      let reg = string2regExp(arg1, false);
+      fn = value => reg.test(String(value));
     }
 
     keys = keys.split(/\s*,\s*/);
@@ -273,12 +434,12 @@ export const filters: {
   },
   base64Encode(str) {
     return btoa(
-      encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, function toSolidBytes(
-        match,
-        p1
-      ) {
-        return String.fromCharCode(('0x' + p1) as any);
-      })
+      encodeURIComponent(str).replace(
+        /%([0-9A-F]{2})/g,
+        function toSolidBytes(match, p1) {
+          return String.fromCharCode(('0x' + p1) as any);
+        }
+      )
     );
   },
 
@@ -308,7 +469,7 @@ export const filters: {
     matchArg = getStrOrVariable(matchArg, this as any);
     return getConditionValue(
       input,
-      matchArg && new RegExp(matchArg, 'i').test(String(input)),
+      matchArg && string2regExp(matchArg, false).test(String(input)),
       trueValue,
       falseValue,
       this
@@ -318,7 +479,7 @@ export const filters: {
     matchArg = getStrOrVariable(matchArg, this as any);
     return getConditionValue(
       input,
-      matchArg && !new RegExp(matchArg, 'i').test(String(input)),
+      matchArg && !string2regExp(matchArg, false).test(String(input)),
       trueValue,
       falseValue,
       this
@@ -364,9 +525,28 @@ function getStrOrVariable(value: string, data: any) {
     ? parseInt(value, 10)
     : /^(-?\d+)\.\d+?$/.test(value)
     ? parseFloat(value)
+    : /^\[.*\]$/.test(value)
+    ? value
+        .substring(1, value.length - 1)
+        .split(/\s*,\s*/)
+        .filter(item => item)
     : /,/.test(value)
-    ? value.split(/\s*,\s*/)
+    ? value.split(/\s*,\s*/).filter(item => item)
     : resolveVariable(value, data);
+}
+
+function str2array(list: any) {
+  if (list && typeof list === 'string') {
+    if (/^\[.*\]$/.test(list)) {
+      return list
+        .substring(1, list.length - 1)
+        .split(/\s*,\s*/)
+        .filter(item => item);
+    } else {
+      return list.split(/\s*,\s*/).filter(item => item);
+    }
+  }
+  return list;
 }
 
 function getConditionValue(
@@ -422,7 +602,7 @@ export function pickValues(names: string, data: object) {
 }
 
 export const resolveVariable = (path?: string, data: any = {}): any => {
-  if (!path) {
+  if (!path || !data) {
     return undefined;
   }
 
@@ -438,7 +618,7 @@ export const resolveVariable = (path?: string, data: any = {}): any => {
     return data[path];
   }
 
-  let parts = path.replace(/^{|}$/g, '').split('.');
+  let parts = keyToPath(path.replace(/^{|}$/g, ''));
   return parts.reduce((data, path) => {
     if ((isObject(data) || Array.isArray(data)) && path in data) {
       return (data as {[propName: string]: any})[path];
@@ -479,7 +659,7 @@ export const resolveVariableAndFilter = (
 
   // 先只支持一层吧
   finalKey = finalKey.replace(
-    /(\\|\\\$)?\$(?:([a-z0-9_.]+)|{([^}{]+)})/g,
+    /(\\|\\\$)?\$(?:([a-zA-Z0-9_.]+)|{([^}{]+)})/g,
     (_, escape) => {
       return escape
         ? _.substring(1)
@@ -500,8 +680,10 @@ export const resolveVariableAndFilter = (
 
   let prevConInputChanged = false; // 前一个类三元过滤器生效，则跳过后续类三元过滤器
 
-  return ret == null && !~originalKey.indexOf('default')
-    ? ''
+  return ret == null &&
+    !~originalKey.indexOf('default') &&
+    !~originalKey.indexOf('now')
+    ? ret
     : paths.reduce((input, filter) => {
         let params = filter
           .replace(
@@ -564,7 +746,7 @@ export const tokenize = (
 
       return escape
         ? _.substring(1)
-        : resolveVariableAndFilter(_, data, defaultFilter);
+        : resolveVariableAndFilter(_, data, defaultFilter) ?? '';
     }
   );
 };
@@ -581,11 +763,15 @@ function resolveMapping(
     : value;
 }
 
-export function dataMapping(to: any, from: PlainObject): any {
+export function dataMapping(
+  to: any,
+  from: PlainObject,
+  ignoreFunction: boolean | ((key: string, value: any) => boolean) = false
+): any {
   let ret = {};
 
   if (Array.isArray(to)) {
-    return to.map(item => dataMapping(item, from));
+    return to.map(item => dataMapping(item, from, ignoreFunction));
   } else if (!to) {
     return ret;
   }
@@ -594,7 +780,10 @@ export function dataMapping(to: any, from: PlainObject): any {
     const value = to[key];
     let keys: Array<string>;
 
-    if (key === '&' && value === '$$') {
+    if (typeof ignoreFunction === 'function' && ignoreFunction(key, value)) {
+      // 如果被ignore，不做数据映射处理。
+      (ret as PlainObject)[key] = value;
+    } else if (key === '&' && value === '$$') {
       ret = {
         ...ret,
         ...from
@@ -607,7 +796,11 @@ export function dataMapping(to: any, from: PlainObject): any {
         from[keys[0].substring(1)] &&
         Array.isArray(from[keys[0].substring(1)])
           ? from[keys[0].substring(1)].map((raw: object) =>
-              dataMapping(value[keys[0]], createObject(from, raw))
+              dataMapping(
+                value[keys[0]],
+                createObject(from, raw),
+                ignoreFunction
+              )
             )
           : resolveMapping(value, from);
 
@@ -654,19 +847,19 @@ export function dataMapping(to: any, from: PlainObject): any {
       const mapping = value[keys[0]];
 
       (ret as PlainObject)[key] = arr.map((raw: object) =>
-        dataMapping(mapping, createObject(from, raw))
+        dataMapping(mapping, createObject(from, raw), ignoreFunction)
       );
     } else if (isPlainObject(value)) {
-      (ret as PlainObject)[key] = dataMapping(value, from);
+      (ret as PlainObject)[key] = dataMapping(value, from, ignoreFunction);
     } else if (Array.isArray(value)) {
       (ret as PlainObject)[key] = value.map((value: any) =>
         isPlainObject(value)
-          ? dataMapping(value, from)
+          ? dataMapping(value, from, ignoreFunction)
           : resolveMapping(value, from)
       );
     } else if (typeof value == 'string' && ~value.indexOf('$')) {
       (ret as PlainObject)[key] = resolveMapping(value, from);
-    } else if (typeof value === 'function') {
+    } else if (typeof value === 'function' && ignoreFunction !== true) {
       (ret as PlainObject)[key] = value(from);
     } else {
       (ret as PlainObject)[key] = value;

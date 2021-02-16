@@ -57,6 +57,9 @@ export function monacoFactory(
     minimap: {
       enabled: false
     },
+    scrollbar: {
+      alwaysConsumeMouseWheel: false
+    },
     ...options
   });
 }
@@ -112,13 +115,16 @@ export class Editor extends React.Component<EditorProps, any> {
 
       if (this.props.language === 'json') {
         try {
-          value = JSON.stringify(JSON.parse(value), null, 4);
+          value = JSON.stringify(JSON.parse(value), null, 2);
         } catch (e) {}
       }
 
-      const model = this.editor.getModel();
       this.preventTriggerChangeEvent = true;
-      this.editor.pushUndoStop();
+      const eidtor = this.editor.getModifiedEditor
+        ? this.editor.getModifiedEditor()
+        : this.editor;
+      const model = eidtor.getModel();
+      eidtor.pushUndoStop();
       // pushEditOperations says it expects a cursorComputer, but doesn't seem to need one.
       model.pushEditOperations(
         [],
@@ -129,7 +135,7 @@ export class Editor extends React.Component<EditorProps, any> {
           }
         ]
       );
-      this.editor.pushUndoStop();
+      eidtor.pushUndoStop();
       this.preventTriggerChangeEvent = false;
     }
 
@@ -173,9 +179,7 @@ export class Editor extends React.Component<EditorProps, any> {
   }
 
   loadMonaco() {
-    (require as any)(['monaco-editor'], (monaco: any) => {
-      this.initMonaco(monaco);
-    });
+    import('monaco-editor').then(monaco => this.initMonaco(monaco));
   }
 
   initMonaco(monaco: any) {
@@ -195,7 +199,7 @@ export class Editor extends React.Component<EditorProps, any> {
         value = JSON.stringify(
           typeof value === 'string' ? JSON.parse(value) : value,
           null,
-          4
+          2
         );
       } catch (e) {
         // ignore
@@ -216,7 +220,8 @@ export class Editor extends React.Component<EditorProps, any> {
     monaco.languages.json?.jsonDefaults.setDiagnosticsOptions({
       enableSchemaRequest: true,
       validate: true,
-      allowComments: true
+      allowComments: true,
+      ...monaco.languages.json?.jsonDefaults.diagnosticsOptions
     });
 
     // After initializing monaco editor

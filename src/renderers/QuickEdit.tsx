@@ -423,12 +423,12 @@ export const HocQuickEdit = (config: Partial<QuickEditConfig> = {}) => (
               : [
                   {
                     type: 'button',
-                    label: __('取消'),
+                    label: __('cancle'),
                     actionType: 'cancel'
                   },
 
                   {
-                    label: __('确认'),
+                    label: __('confirm'),
                     type: 'submit',
                     primary: true
                   }
@@ -457,7 +457,8 @@ export const HocQuickEdit = (config: Partial<QuickEditConfig> = {}) => (
         render,
         popOverContainer,
         classPrefix: ns,
-        classnames: cx
+        classnames: cx,
+        canAccessSuperData
       } = this.props;
 
       const content = (
@@ -469,8 +470,10 @@ export const HocQuickEdit = (config: Partial<QuickEditConfig> = {}) => (
             onSubmit: this.handleSubmit,
             onAction: this.handleAction,
             onChange: null,
+            formLazyChange: false,
             ref: this.formRef,
-            popOverContainer: () => this.overlay
+            popOverContainer: () => this.overlay,
+            canAccessSuperData
           })}
         </div>
       );
@@ -508,7 +511,8 @@ export const HocQuickEdit = (config: Partial<QuickEditConfig> = {}) => (
         className,
         classnames: cx,
         render,
-        noHoc
+        noHoc,
+        canAccessSuperData
       } = this.props;
 
       if (!quickEdit || !onQuickChange || quickEditEnabled === false || noHoc) {
@@ -524,7 +528,9 @@ export const HocQuickEdit = (config: Partial<QuickEditConfig> = {}) => (
               ref: this.formRef,
               simpleMode: true,
               onInit: this.handleInit,
-              onChange: this.handleChange
+              onChange: this.handleChange,
+              formLazyChange: false,
+              canAccessSuperData
             })}
           </Component>
         );

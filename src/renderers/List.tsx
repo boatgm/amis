@@ -43,7 +43,7 @@ export type ListBodyFieldObject = {
   /**
    * 列标题
    */
-  label: string;
+  label?: string;
 
   /**
    * label 类名
@@ -75,6 +75,11 @@ export type ListBodyField = SchemaObject & ListBodyFieldObject;
 
 export interface ListItemSchema extends Omit<BaseSchema, 'type'> {
   actions?: Array<ActionSchema>;
+
+  /**
+   * 操作位置，默认在右侧，可以设置成左侧。
+   */
+  actionsPosition?: 'left' | 'right';
 
   /**
    * 图片地址
@@ -212,7 +217,9 @@ export interface Column {
   [propName: string]: any;
 }
 
-export interface ListProps extends RendererProps, ListSchema {
+export interface ListProps
+  extends RendererProps,
+    Omit<ListSchema, 'type' | 'className'> {
   store: IListStore;
   selectable?: boolean;
   selected?: Array<any>;
@@ -254,7 +261,7 @@ export default class List extends React.Component<ListProps, object> {
   ];
   static defaultProps: Partial<ListProps> = {
     className: '',
-    placeholder: '没有数据',
+    placeholder: 'placeholder.noData',
     source: '$items',
     selectable: false,
     headerClassName: '',
@@ -418,7 +425,8 @@ export default class List extends React.Component<ListProps, object> {
     }
 
     const clip = (this.body as HTMLElement).getBoundingClientRect();
-    const offsetY = this.props.env.affixOffsetTop || 0;
+    const offsetY =
+      this.props.affixOffsetTop ?? this.props.env.affixOffsetTop ?? 0;
     const affixed = clip.top < offsetY && clip.top + clip.height - 40 > offsetY;
 
     this.body.offsetWidth &&
@@ -991,7 +999,9 @@ export class ListRenderer extends List {
   onCheck: (item: IItem) => void;
 }
 
-export interface ListItemProps extends RendererProps, ListItemSchema {
+export interface ListItemProps
+  extends RendererProps,
+    Omit<ListItemSchema, 'type' | 'className'> {
   hideCheckToggler?: boolean;
   item: IItem;
   itemIndex?: number;
@@ -1215,7 +1225,7 @@ export class ListItem extends React.Component<ListItemProps> {
         this.renderChild(
           {
             type: 'plain',
-            ...child
+            ...(typeof child === 'string' ? {type: 'tpl', tpl: child} : child)
           },
           `body/${index}`,
           index
@@ -1239,7 +1249,8 @@ export class ListItem extends React.Component<ListItemProps> {
       checkOnItemClick,
       render,
       checkable,
-      classnames: cx
+      classnames: cx,
+      actionsPosition
     } = this.props;
 
     const avatar = filter(avatarTpl, data);
@@ -1250,7 +1261,10 @@ export class ListItem extends React.Component<ListItemProps> {
     return (
       <div
         onClick={checkOnItemClick && checkable ? this.handleClick : undefined}
-        className={cx('ListItem', className)}
+        className={cx(
+          `ListItem ListItem--actions-at-${actionsPosition || 'right'}`,
+          className
+        )}
       >
         {this.renderLeft()}
         {this.renderRight()}
@@ -1280,7 +1294,9 @@ export class ListItem extends React.Component<ListItemProps> {
   test: /(^|\/)(?:list|list-group)\/(?:.*\/)?list-item$/,
   name: 'list-item'
 })
-export class ListItemRenderer extends ListItem {}
+export class ListItemRenderer extends ListItem {
+  static propsList = ['multiple', ...ListItem.propsList];
+}
 
 @Renderer({
   test: /(^|\/)list-item-field$/,

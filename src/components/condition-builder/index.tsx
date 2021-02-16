@@ -4,8 +4,15 @@ import {LocaleProps, localeable} from '../../locale';
 import {uncontrollable} from 'uncontrollable';
 import {Fields, ConditionGroupValue, Funcs} from './types';
 import ConditionGroup from './Group';
-import defaultConfig from './config';
-import {autobind, findTreeIndex, spliceTree, getTree} from '../../utils/helper';
+import defaultConfig, {Config} from './config';
+import {
+  autobind,
+  findTreeIndex,
+  spliceTree,
+  getTree,
+  mapTree,
+  guid
+} from '../../utils/helper';
 import {findDOMNode} from 'react-dom';
 import animtion from '../../utils/Animation';
 
@@ -15,10 +22,11 @@ export interface ConditionBuilderProps extends ThemeProps, LocaleProps {
   showNot?: boolean;
   value?: ConditionGroupValue;
   onChange: (value: ConditionGroupValue) => void;
+  config?: Config;
 }
 
 export class QueryBuilder extends React.Component<ConditionBuilderProps> {
-  config = defaultConfig;
+  config = {...defaultConfig, ...this.props.config};
 
   dragTarget?: HTMLElement;
   // dragNextSibling: Element | null;
@@ -190,12 +198,28 @@ export class QueryBuilder extends React.Component<ConditionBuilderProps> {
       showNot
     } = this.props;
 
+    const normalizedValue = Array.isArray(value?.children)
+      ? {
+          ...value,
+          children: mapTree(value!.children, (value: any) => {
+            if (value.id) {
+              return value;
+            }
+
+            return {
+              ...value,
+              id: guid()
+            };
+          })
+        }
+      : value;
+
     return (
       <ConditionGroup
         config={this.config}
         funcs={funcs || this.config.funcs}
         fields={fields || this.config.fields}
-        value={value}
+        value={normalizedValue as any}
         onChange={onChange}
         classnames={cx}
         removeable={false}
